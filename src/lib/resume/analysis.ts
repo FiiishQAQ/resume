@@ -164,10 +164,13 @@ const analysisGraph = new StateGraph(AnalysisState)
 
 export async function analyzeResume(resumeText: string, segments: SegmentRecord[]): Promise<AnalysisResult> {
   try {
+    console.log('start')
     const result = await analysisGraph.invoke({
       resumeText,
       segments,
     });
+
+    console.log(result)
 
     if (!result.summary || result.mappedSkills.length === 0) {
       return mockResumeAnalysis(resumeText, segments);
@@ -185,7 +188,8 @@ export async function analyzeResume(resumeText: string, segments: SegmentRecord[
         evidence: excerpt(skill.evidence, 160),
       })),
     };
-  } catch {
+  } catch (e) {
+    console.log(e)
     return mockResumeAnalysis(resumeText, segments);
   }
 }

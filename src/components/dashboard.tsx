@@ -29,6 +29,7 @@ export function Dashboard({ initialState }: Props) {
   const [interviewAnswer, setInterviewAnswer] = useState("");
   const [editorText, setEditorText] = useState(initialState.latestVersion?.rawText || "");
   const [statusText, setStatusText] = useState("等待上传简历。");
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -49,6 +50,7 @@ export function Dashboard({ initialState }: Props) {
   const runAction = (label: string, action: () => Promise<void>) => {
     setErrorText(null);
     setStatusText(label);
+    setPendingAction(label);
 
     startTransition(async () => {
       try {
@@ -58,9 +60,19 @@ export function Dashboard({ initialState }: Props) {
       } catch (error) {
         setErrorText(error instanceof Error ? error.message : "发生未知错误");
         setStatusText(`${label} 失败。`);
+      } finally {
+        setPendingAction(null);
       }
     });
   };
+
+  const isUploading = pendingAction === "上传并解析简历";
+  const isAnalyzing = pendingAction === "运行简历分析";
+  const isInterviewStarting = pendingAction === "生成模拟面试";
+  const isResponding = pendingAction === "提交回答";
+  const isGeneratingSuggestions = pendingAction === "生成优化建议";
+  const isSavingVersion = pendingAction === "保存新的简历版本";
+  const isRefreshing = isPending && pendingAction === null;
 
   const handleUpload = () => {
     if (!uploadFile) {
@@ -147,6 +159,16 @@ export function Dashboard({ initialState }: Props) {
 
   return (
     <main className="shell">
+      {isPending ? (
+        <div className="loading-overlay" aria-live="polite" aria-busy="true">
+          <div className="loading-overlay-card">
+            <span className="spinner" />
+            <strong>{pendingAction || "同步最新状态"}</strong>
+            <p>请求进行中，请稍候。</p>
+          </div>
+        </div>
+      ) : null}
+
       <section className="hero">
         <div className="hero-copy">
           <span className="eyebrow">Resume Lab / Next.js + LangGraph.js</span>
@@ -172,8 +194,14 @@ export function Dashboard({ initialState }: Props) {
       <section className="status-strip">
         <div>
           <span className="status-label">执行状态</span>
-          <strong>{isPending ? "处理中" : statusText}</strong>
+          <strong>{isPending ? `${pendingAction || "处理中"}...` : statusText}</strong>
         </div>
+        {isPending ? (
+          <div className="pending-chip">
+            <span className="spinner spinner-inline" />
+            <span>{pendingAction || "处理中"}</span>
+          </div>
+        ) : null}
         {errorText ? (
           <div className="error-banner">
             <AlertCircle size={16} />
@@ -189,9 +217,9 @@ export function Dashboard({ initialState }: Props) {
               <span className="panel-icon"><FileUp size={18} /></span>
               <h2>1. 上传简历</h2>
             </div>
-            <button className="ghost-button" type="button" onClick={() => void refreshState()}>
+            <button className="ghost-button" type="button" onClick={() => void refreshState()} disabled={isPending}>
               <RefreshCcw size={16} />
-              刷新
+              {isRefreshing ? "刷新中..." : "刷新"}
             </button>
           </div>
           <p className="panel-copy">上传可复制文本的 PDF。系统会提取文本并创建一个新的简历版本。</p>
@@ -199,12 +227,14 @@ export function Dashboard({ initialState }: Props) {
             <input
               type="file"
               accept="application/pdf"
+              disabled={isPending}
               onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
             />
             <button className="primary-button" type="button" onClick={handleUpload} disabled={isPending}>
-              上传并解析
+              {isUploading ? "上传中..." : "上传并解析"}
             </button>
           </div>
+          {isUploading ? <div className="inline-loading">正在提取 PDF 文本并写入本地版本库...</div> : null}
           {state.latestVersion ? (
             <div className="meta-list">
               <div><span>当前版本</span><strong>{state.latestVersion.id.slice(0, 8)}</strong></div>
@@ -223,9 +253,10 @@ export function Dashboard({ initialState }: Props) {
               <h2>2. 运行分析</h2>
             </div>
             <button className="primary-button" type="button" onClick={handleRunAnalysis} disabled={isPending || !state.latestVersion}>
-              运行简历分析
+              {isAnalyzing ? "分析中..." : "运行简历分析"}
             </button>
           </div>
+          {isAnalyzing ? <div className="inline-loading">正在提炼技能、映射项目证据并生成简历基线分...</div> : null}
           {state.latestAnalysis ? (
             <div className="analysis-summary">
               <div className="score-badge">
@@ -253,7 +284,18 @@ export function Dashboard({ initialState }: Props) {
               <h2>技能与项目映射</h2>
             </div>
           </div>
-          {state.latestSkills.length > 0 ? (
+          {isAnalyzing ? (
+            <div className="loading-block">
+              <div className="skeleton-line short" />
+              <div className="skeleton-line" />
+              <div className="skeleton-line" />
+              <div className="skeleton-grid">
+                <div className="skeleton-card" />
+                <div className="skeleton-card" />
+              </div>
+            </div>
+          ) : null}
+          {!isAnalyzing && state.latestSkills.length > 0 ? (
             <div className="skill-grid">
               {state.latestSkills.map((skill) => (
                 <div className="skill-card" key={skill.id ?? skill.name}>
@@ -284,7 +326,14 @@ export function Dashboard({ initialState }: Props) {
               <h2>优势与薄弱处</h2>
             </div>
           </div>
-          {state.latestAnalysis ? (
+          {isAnalyzing ? (
+            <div className="loading-block">
+              <div className="skeleton-line short" />
+              <div className="skeleton-line" />
+              <div className="skeleton-line" />
+            </div>
+          ) : null}
+          {!isAnalyzing && state.latestAnalysis ? (
             <div className="markdown-grid">
               <div className="markdown-card">
                 <ReactMarkdown>{state.latestAnalysis.strengthsMarkdown}</ReactMarkdown>
@@ -307,11 +356,18 @@ export function Dashboard({ initialState }: Props) {
               <h2>3. 模拟面试</h2>
             </div>
             <button className="primary-button" type="button" onClick={handleStartInterview} disabled={isPending || !state.latestAnalysis}>
-              开始一轮面试
+              {isInterviewStarting ? "生成问题中..." : "开始一轮面试"}
             </button>
           </div>
           <div className="chat-log">
-            {state.latestMessages.length > 0 ? (
+            {isInterviewStarting ? (
+              <div className="loading-block">
+                <div className="message-bubble assistant loading-bubble">
+                  <span>面试官</span>
+                  <p>正在生成第一轮面试问题...</p>
+                </div>
+              </div>
+            ) : state.latestMessages.length > 0 ? (
               state.latestMessages.map((message) => (
                 <div className={clsx("message-bubble", message.role)} key={message.id}>
                   <span>{message.role === "assistant" ? "面试官" : "你"}</span>
@@ -326,11 +382,12 @@ export function Dashboard({ initialState }: Props) {
             <div className="composer">
               <textarea
                 value={interviewAnswer}
+                disabled={isPending}
                 onChange={(event) => setInterviewAnswer(event.target.value)}
                 placeholder="用 STAR 或 场景-动作-结果 结构回答，尽量讲清楚你的个人贡献、权衡和指标结果。"
               />
               <button className="primary-button" type="button" onClick={handleRespond} disabled={isPending}>
-                提交回答
+                {isResponding ? "评估中..." : "提交回答"}
               </button>
             </div>
           ) : null}
@@ -343,7 +400,12 @@ export function Dashboard({ initialState }: Props) {
               <h2>面试评分</h2>
             </div>
           </div>
-          {state.latestScorecard ? (
+          {isResponding ? (
+            <div className="loading-block">
+              <div className="inline-loading">正在评估回答质量并决定下一轮追问...</div>
+            </div>
+          ) : null}
+          {!isResponding && state.latestScorecard ? (
             <div className="scorecard">
               <div className="score-grid">
                 <div><span>总分</span><strong>{state.latestScorecard.totalScore}</strong></div>
@@ -370,10 +432,18 @@ export function Dashboard({ initialState }: Props) {
               <h2>4. 优化建议</h2>
             </div>
             <button className="primary-button" type="button" onClick={handleGenerateSuggestions} disabled={isPending || !state.latestAnalysis}>
-              生成建议
+              {isGeneratingSuggestions ? "生成中..." : "生成建议"}
             </button>
           </div>
-          {state.latestImprovement ? (
+          {isGeneratingSuggestions ? (
+            <div className="loading-block">
+              <div className="inline-loading">正在整合简历分析与面试表现，生成建议和改写草稿...</div>
+              <div className="skeleton-line" />
+              <div className="skeleton-line" />
+              <div className="skeleton-line short" />
+            </div>
+          ) : null}
+          {!isGeneratingSuggestions && state.latestImprovement ? (
             <div className="suggestion-list">
               <p>{state.latestImprovement.overview}</p>
               {state.latestImprovement.suggestions.map((item) => (
@@ -398,15 +468,20 @@ export function Dashboard({ initialState }: Props) {
               <h2>5. 站内改写与版本化</h2>
             </div>
             <button className="primary-button" type="button" onClick={handleSaveVersion} disabled={isPending || !state.latestVersion}>
-              保存为新版本
+              {isSavingVersion ? "保存中..." : "保存为新版本"}
             </button>
           </div>
           <textarea
             className="editor"
             value={editorText}
+            disabled={isPending}
             onChange={(event) => setEditorText(event.target.value)}
-            placeholder="分析完成后，在这里直接重写你的简历内容。"
+            placeholder="生成建议后，这里会自动填入一版改写草稿；你也可以继续手动修改。"
           />
+          {state.latestImprovement?.rewrittenResume ? (
+            <div className="inline-loading">系统已生成可编辑草稿，确认后可直接保存为新版本。</div>
+          ) : null}
+          {isSavingVersion ? <div className="inline-loading">正在创建新的简历版本并写入历史轨迹...</div> : null}
         </article>
       </section>
 

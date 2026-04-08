@@ -27,7 +27,7 @@ export async function POST() {
   const session = getLatestSessionByVersion(version.id);
   const scorecard = session ? getScorecardBySession(session.id) : null;
   const skills = getSkillsByAnalysis(analysis.id);
-  const payload = await generateImprovementPayload({
+  const result = await generateImprovementPayload({
     resumeText: version.rawText,
     analysis,
     skills,
@@ -38,9 +38,9 @@ export async function POST() {
     resumeVersionId: version.id,
     analysisRunId: analysis.id,
     sessionId: session?.id ?? null,
-    payload,
-    rewrittenResume: version.rawText,
+    payload: result.payload,
+    rewrittenResume: result.rewrittenResume,
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, rewrittenResume: result.rewrittenResume });
 }

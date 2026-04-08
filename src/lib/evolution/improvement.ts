@@ -19,23 +19,37 @@ const suggestionSchema = z.object({
   ),
 });
 
+const rewriteSchema = z.object({
+  rewrittenResume: z.string(),
+});
+
+export type ImprovementGenerationResult = {
+  payload: SuggestionPayload;
+  rewrittenResume: string;
+};
+
 export async function generateImprovementPayload(input: {
   resumeText: string;
   analysis: AnalysisRun;
   skills: SkillProfile[];
   scorecard?: Scorecard | null;
-}): Promise<SuggestionPayload> {
+}): Promise<ImprovementGenerationResult> {
   const model = getChatModel();
   if (!model) {
-    return mockImprovementPayload(input.resumeText, {
+    const payload = mockImprovementPayload(input.resumeText, {
       baselineScore: input.analysis.baselineScore,
       summary: input.analysis.summary,
       skills: input.skills,
     });
+
+    return {
+      payload,
+      rewrittenResume: createMockRewrittenResume(input.resumeText, payload),
+    };
   }
 
   try {
-    const runnable = model.withStructuredOutput(suggestionSchema);
+    const suggestionRunnable = model.withStructuredOutput(suggestionSchema);
     const prompt = `
 你是一名资深求职顾问。请基于以下信息，为候选人生成简历优化建议。
 要求：
@@ -56,12 +70,55 @@ ${JSON.stringify(input.skills, null, 2)}
 ${JSON.stringify(input.scorecard, null, 2)}
     `.trim();
 
-    return await runnable.invoke(prompt);
+    const payload = await suggestionRunnable.invoke(prompt);
+    const rewriteRunnable = model.withStructuredOutput(rewriteSchema);
+    const rewritePrompt = `
+你是一名资深求职顾问。请基于原简历和优化建议，直接输出一版“可继续人工编辑”的改写简历全文。
+要求：
+1. 保留候选人原有事实，不要虚构经历、指标或头衔。
+2. 优先优化结构、措辞、项目描述、成果表达和技能与项目的绑定。
+3. 输出纯简历正文，不要加解释，不要加 markdown code block。
+4. 语言与原简历保持一致，原文主要是中文就输出中文简历。
+
+原简历：
+${input.resumeText.slice(0, 12000)}
+
+优化建议：
+${JSON.stringify(payload, null, 2)}
+    `.trim();
+
+    const rewrite = await rewriteRunnable.invoke(rewritePrompt);
+
+    return {
+      payload,
+      rewrittenResume: rewrite.rewrittenResume.trim(),
+    };
   } catch {
-    return mockImprovementPayload(input.resumeText, {
+    const payload = mockImprovementPayload(input.resumeText, {
       baselineScore: input.analysis.baselineScore,
       summary: input.analysis.summary,
       skills: input.skills,
     });
+
+    return {
+      payload,
+      rewrittenResume: createMockRewrittenResume(input.resumeText, payload),
+    };
   }
+}
+
+function createMockRewrittenResume(resumeText: string, payload: SuggestionPayload) {
+  const suggestionLines = payload.suggestions.map((item, index) => {
+    return `${index + 1}. ${item.title}\n- 重点问题：${item.problem}\n- 改写方向：${item.recommendation}\n- 面试引导：${item.interviewerAngle}`;
+  });
+
+  return [
+    "【改写草稿】",
+    "下面这版是系统根据当前建议生成的可编辑草稿，请继续按真实经历补充量化结果和细节。",
+    "",
+    resumeText.trim(),
+    "",
+    "【建议优先改写点】",
+    ...suggestionLines,
+  ].join("\n");
 }
