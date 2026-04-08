@@ -23,7 +23,7 @@ pnpm install
 2. 配置环境变量
 
 ```bash
-copy .env.example .env.local
+copy .example.env .env.local
 ```
 
 把 `OPENAI_API_KEY` 填进去即可启用真实模型；如果不填，应用会以 mock 模式运行完整流程。
