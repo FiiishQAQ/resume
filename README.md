@@ -1,6 +1,7 @@
 # Resume Lab
 
 本地运行的简历分析与模拟面试工作台，基于 `Next.js App Router + LangGraph.js + LangChain + SQLite(node:sqlite)`。
+项目使用 codex 进行开发。
 
 ## 功能
 
